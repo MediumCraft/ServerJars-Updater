@@ -1,0 +1,72 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+    - 'src/**/*'
+    - 'pom.xml'
+    - '.github/workflows/automation-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+  
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+    
+    - name: Set up Java Environment
+      uses: actions/setup-java@v3
+      with:
+        java-version: 8
+        distribution: 'adopt'
+        cache: 'gradle'
+    
+    # Make gradle executable
+    - name: Make gradle executable
+      run: chmod +x gradlew
+    # Clean, Test, Build (in that order to save the artifact to the action)
+    - uses: burrunan/gradle-cache-action@v1
+      name: Clean, Test and Build Jar
+      with:
+        job-id: jdk8
+        arguments: clean test shadowJar
+        gradle-version: wrapper
+    
+    - name: Set outputs
+      id: short_sha
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+    
+    - name: Deploy to GitHub Releases
+      uses: actions/upload-artifact@v2
+      with:
+        name: ServerJarsUpdater-${{ steps.short_sha.outputs.sha_short }}
+        path: ./build/libs/*.jar
+    
+    - name: Publish Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./build/libs/*.jar
+        body: |
+          Commit ${{ steps.short_sha.outputs.sha_short }}
+          ServerJars Updater Automation Compile
+        name: ServerJars Updater Automation Compile ${{ steps.short_sha.outputs.sha_short }}
+        draft: false
+        tag_name: commit-${{ steps.short_sha.outputs.sha_short }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.RELEASE_KEY }}
+        GITHUB_REPOSITORY: MediumCraft/ServerJars-Updater
